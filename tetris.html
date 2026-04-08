@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retro Tetris</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #33ff33;
+            font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+            font-size: 3vh; 
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            text-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
+            user-select: none;
+            touch-action: none; 
+        }
+
+        .panel {
+            white-space: pre;
+            line-height: 1.1; 
+        }
+
+        #game-grid {
+            display: grid;
+            grid-template-columns: 200px auto 250px;
+            grid-template-areas: 
+                "stats center controls"
+                "next center controls";
+            gap: 20px;
+            align-items: center;
+        }
+
+        #stats-area { grid-area: stats; align-self: end; font-size: 1.1em; }
+        #next-area { grid-area: next; align-self: start; font-size: 1.1em; }
+        #controls-area { grid-area: controls; display: flex; flex-direction: column; gap: 15px; }
+        
+        #center-area { 
+            grid-area: center; 
+            text-align: center; 
+            border: 3px double #33ff33; 
+            padding: 10px 15px; 
+            background: rgba(0, 20, 0, 0.15); 
+        }
+
+        .volume-box { display: flex; flex-direction: column; gap: 8px; font-size: 0.8em; }
+        input[type=range] {
+            appearance: none; background: #113311; height: 10px;
+            border: 1px solid #33ff33; cursor: pointer; width: 100%;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none; width: 18px; height: 18px;
+            background: #33ff33; box-shadow: 0 0 10px #33ff33;
+        }
+
+        .btn {
+            background: transparent; color: #33ff33; border: 2px solid #33ff33;
+            font-family: inherit; font-weight: bold; font-size: 0.7em;
+            padding: 10px; cursor: pointer; text-transform: uppercase;
+        }
+        .btn:active { background: #33ff33; color: #050505; }
+
+        .scanline {
+            width: 100%; height: 100%; z-index: 10;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 4px;
+            pointer-events: none; position: fixed; top: 0; left: 0;
+        }
+
+        /* МОБИЛЬНАЯ ВЕРСТКА - ФИКС "УЕХАВШЕГО" ДИЗАЙНА */
+        @media (max-aspect-ratio: 1/1) {
+            body { align-items: flex-start; padding-top: 5px; }
+            #game-grid {
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: auto auto auto 1fr;
+                grid-template-areas: 
+                    "stats next"
+                    "vol vol"
+                    "btns btns"
+                    "center center";
+                gap: 8px; width: 98vw;
+            }
+            #stats-area { grid-area: stats; font-size: 2.2vh; text-align: left; padding-left: 10px; }
+            #next-area { grid-area: next; font-size: 2.2vh; text-align: right; padding-right: 10px; }
+            
+            #controls-area { grid-area: none; display: none; } /* Скрываем десктопную панель */
+            
+            /* Новые зоны для мобильного управления */
+            .mobile-vol { grid-area: vol; display: flex; justify-content: center; align-items: center; gap: 15px; width: 90%; margin: 0 auto; }
+            .mobile-btns { grid-area: btns; display: flex; justify-content: center; gap: 10px; width: 100%; }
+            
+            .btn-mob { padding: 6px 12px; font-size: 1.8vh; flex: 1; max-width: 160px; }
+            .vol-mob { width: 120px !important; }
+
+            #center-area { font-size: 2.5vh; padding: 5px; margin-top: 2px; }
+            #controls-text { display: none; }
+        }
+
+        /* Скрываем мобильные элементы на десктопе */
+        @media (min-aspect-ratio: 1/1) {
+            .mobile-vol, .mobile-btns { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<div id="game-grid">
+    <div id="stats-area" class="panel"></div>
+    
+    <div id="controls-area" class="panel">
+        <div id="controls-text">УПРАВЛЕНИЕ:<br>← →  - ДВИЖЕНИЕ<br>↑    - ПОВОРОТ<br>↓    - УСКОРИТЬ<br>SPACE- БРОСИТЬ<br>ESC  - ПАУЗА</div>
+        <div class="volume-box">
+            <label>ЗВУК</label>
+            <input type="range" class="sfxSlider" min="0" max="1" step="0.05" value="0.5">
+        </div>
+        <button class="btn" id="pcPauseBtn">⏸ ПАУЗА</button>
+        <button class="btn" onclick="resetRecord()">СБРОС РЕКОРДА</button>
+    </div>
+
+    <div class="mobile-vol">
+        <span style="font-size: 1.8vh;">ЗВУК</span>
+        <input type="range" class="sfxSlider vol-mob" min="0" max="1" step="0.05" value="0.5">
+    </div>
+    <div class="mobile-btns">
+        <button class="btn btn-mob" id="mobPauseBtn">⏸ ПАУЗА</button>
+        <button class="btn btn-mob" onclick="resetRecord()">СБРОС</button>
+    </div>
+
+    <div id="next-area" class="panel"></div>
+    <div id="center-area" class="panel"></div>
+</div>
+
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const sfxGain = audioCtx.createGain();
+    sfxGain.connect(audioCtx.destination);
+    sfxGain.gain.value = 0.5;
+
+    document.querySelectorAll('.sfxSlider').forEach(s => {
+        s.oninput = (e) => {
+            sfxGain.gain.value = e.target.value;
+            document.querySelectorAll('.sfxSlider').forEach(other => other.value = e.target.value);
+        };
+    });
+
+    function playSFX(freq, duration, type = 'square', vol = 0.2) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        g.gain.setValueAtTime(vol, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(g); g.connect(sfxGain);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    }
+
+    const sounds = {
+        rotate: () => playSFX(523, 0.1, 'triangle', 0.15),
+        drop: () => playSFX(150, 0.15, 'sawtooth', 0.2),
+        clear: () => { [523, 659, 783, 1046].forEach((f, i) => setTimeout(() => playSFX(f, 0.4, 'square', 0.1), i * 60)); }
+    };
+
+    const COLS = 10, ROWS = 20;
+    let board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+    let score = 0, lines = 0, level = 1, gameOver = false, isPaused = false;
+    let baseDropInterval = 1000, dropInterval = baseDropInterval, dropCounter = 0, lastTime = 0;
+    let piece, nextPiece;
+
+    let highScore = localStorage.getItem('tetrisHighScore') || 0;
+    const SHAPES = [[], [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], [[2,2],[2,2]], [[0,3,0],[3,3,3],[0,0,0]], [[0,0,4],[4,4,4],[0,0,0]], [[5,0,0],[5,5,5],[0,0,0]], [[0,6,6],[6,6,0],[0,0,0]], [[7,7,0],[0,7,7],[0,0,0]]];
+
+    function createPiece() {
+        const id = Math.floor(Math.random() * 7) + 1;
+        return { matrix: SHAPES[id], x: 3, y: 0 };
+    }
+
+    function rotate(matrix) { return matrix[0].map((_, i) => matrix.map(row => row[i]).reverse()); }
+
+    function collide(b, p) {
+        for (let y = 0; y < p.matrix.length; ++y) {
+            for (let x = 0; x < p.matrix[y].length; ++x) {
+                if (p.matrix[y][x] !== 0 && (b[y + p.y] && b[y + p.y][x + p.x]) !== 0) return true;
+            }
+        }
+        return false;
+    }
+
+    function sweep() {
+        let count = 0;
+        outer: for (let y = ROWS - 1; y >= 0; --y) {
+            for (let x = 0; x < COLS; ++x) if (board[y][x] === 0) continue outer;
+            board.splice(y, 1); board.unshift(new Array(COLS).fill(0));
+            count++; y++;
+        }
+        if (count > 0) {
+            sounds.clear();
+            lines += count; score += count * 100 * level;
+            if (score > highScore) { highScore = score; localStorage.setItem('tetrisHighScore', highScore); }
+            level = Math.floor(lines / 10) + 1;
+            baseDropInterval = Math.max(120, 1000 - (level * 40));
+            dropInterval = baseDropInterval;
+        }
+    }
+
+    function drop() {
+        piece.y++;
+        if (collide(board, piece)) {
+            piece.y--;
+            piece.matrix.forEach((row, y) => row.forEach((v, x) => { if (v) board[y + piece.y][x + piece.x] = v; }));
+            sounds.drop(); piece = nextPiece; nextPiece = createPiece();
+            sweep(); if (collide(board, piece)) gameOver = true;
+        }
+        dropCounter = 0;
+    }
+
+    function render() {
+        const isMobile = window.innerWidth < 700;
+        document.getElementById('stats-area').textContent = `РЕКОРД: ${highScore}\nЛИНИИ:  ${lines}\nУРОВЕНЬ: ${level}\nСЧЕТ:   ${score}`;
+        document.getElementById('next-area').textContent = `СЛЕДУЮЩАЯ:\n` + nextPiece.matrix.map(r => r.map(v => v ? "[]" : "\u00A0\u00A0").join("")).join("\n");
+        
+        let view = board.map(r => [...r]);
+        if (!gameOver && !isPaused) piece.matrix.forEach((r, y) => r.forEach((v, x) => { if(v) view[y+piece.y][x+piece.x] = v; }));
+        
+        let centerText = view.map(r => "<!" + r.map(v => v ? "[]" : ".\u00A0").join("") + "!>").join("\n") + "\n<!====================!>\n";
+        
+        if (gameOver) {
+            const restartHint = isMobile ? " ТАП - РЕСТАРТ " : "ПРОБЕЛ - РЕСТАРТ";
+            centerText += `      ИГРА ОКОНЧЕНА     \n    ${restartHint}    `;
+        } else if (isPaused) {
+            centerText += "       [ ПАУЗА ]        \n                        ";
+        } else {
+            centerText += " \\/\\/\\/\\/\\/\\/\\/\\/\\/\\/ ";
+        }
+        
+        document.getElementById('center-area').textContent = centerText;
+    }
+
+    function togglePause() {
+        if (gameOver) return;
+        isPaused = !isPaused;
+        if (!isPaused) lastTime = performance.now();
+        render();
+    }
+
+    function resetRecord() {
+        if(confirm("СБРОСИТЬ РЕКОРД?")) { highScore = 0; localStorage.removeItem('tetrisHighScore'); render(); }
+    }
+
+    function resetGame() {
+        board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+        score = 0; lines = 0; level = 1; gameOver = false;
+        baseDropInterval = 1000; dropInterval = baseDropInterval;
+        piece = createPiece(); nextPiece = createPiece();
+    }
+
+    function update(t = 0) {
+        if (!gameOver && !isPaused) {
+            const dt = t - lastTime; lastTime = t;
+            dropCounter += dt;
+            if (dropCounter > dropInterval) drop();
+            render();
+        } else { lastTime = t; }
+        requestAnimationFrame(update);
+    }
+
+    document.getElementById('pcPauseBtn').onclick = togglePause;
+    document.getElementById('mobPauseBtn').onclick = (e) => { e.stopPropagation(); togglePause(); };
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') togglePause();
+        if (isPaused) return;
+        if (gameOver && e.code === 'Space') { resetGame(); return; }
+        if (gameOver) return;
+        if (e.key === 'ArrowLeft') { piece.x--; if (collide(board, piece)) piece.x++; }
+        if (e.key === 'ArrowRight') { piece.x++; if (collide(board, piece)) piece.x--; }
+        if (e.key === 'ArrowUp') { const old = piece.matrix; piece.matrix = rotate(piece.matrix); if (collide(board, piece)) piece.matrix = old; else sounds.rotate(); }
+        if (e.key === 'ArrowDown') drop();
+        if (e.code === 'Space') { while(!collide(board, piece)) piece.y++; piece.y--; drop(); }
+        render();
+    });
+
+    // --- СЕНСОРНОЕ УПРАВЛЕНИЕ ---
+    let touchStartX = 0, touchStartY = 0, touchMoved = false, holdTimer = null, isHolding = false;
+
+    document.addEventListener('touchstart', e => {
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        if (gameOver) { resetGame(); return; }
+        if (isPaused) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchMoved = false;
+        holdTimer = setTimeout(() => { if (!touchMoved && !isPaused) { isHolding = true; dropInterval = 40; } }, 200);
+    }, {passive: false});
+
+    document.addEventListener('touchmove', e => {
+        if (gameOver || isPaused || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        let touchX = e.touches[0].clientX;
+        let touchY = e.touches[0].clientY;
+        let dx = touchX - touchStartX, dy = touchY - touchStartY;
+
+        if (Math.abs(dx) > 20 || Math.abs(dy) > 20) { touchMoved = true; clearTimeout(holdTimer); }
+
+        if (dy > 30 && Math.abs(dy) > Math.abs(dx)) { 
+            dropInterval = 40; touchStartY = touchY; 
+        } else if (dx > 25) { 
+            piece.x++; if (collide(board, piece)) piece.x--;
+            touchStartX = touchX; render();
+        } else if (dx < -25) { 
+            piece.x--; if (collide(board, piece)) piece.x++;
+            touchStartX = touchX; render();
+        }
+    }, {passive: false});
+
+    document.addEventListener('touchend', e => {
+        clearTimeout(holdTimer); dropInterval = baseDropInterval;
+        if (!touchMoved && !isHolding && !isPaused && !gameOver && e.target.tagName !== 'BUTTON') {
+            const old = piece.matrix; piece.matrix = rotate(piece.matrix);
+            if (collide(board, piece)) piece.matrix = old; else sounds.rotate();
+            render();
+        }
+        isHolding = false;
+    });
+
+    piece = createPiece(); nextPiece = createPiece();
+    lastTime = performance.now();
+    update(lastTime);
+</script>
+</body>
+</html>
