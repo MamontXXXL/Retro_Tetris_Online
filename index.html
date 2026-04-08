@@ -54,16 +54,6 @@
             padding: 10px 15px; background: rgba(0, 20, 0, 0.15); 
         }
 
-        .volume-box { display: flex; flex-direction: column; gap: 8px; font-size: 0.8em; }
-        input[type=range] {
-            appearance: none; background: #113311; height: 10px;
-            border: 1px solid #33ff33; cursor: pointer; width: 100%;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            appearance: none; width: 18px; height: 18px;
-            background: #33ff33; box-shadow: 0 0 10px #33ff33;
-        }
-
         .btn {
             background: transparent; color: #33ff33; border: 2px solid #33ff33;
             font-family: inherit; font-weight: bold; font-size: 0.6em;
@@ -74,19 +64,10 @@
         #auth-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(5, 5, 5, 0.98); z-index: 100;
-            display: flex; justify-content: center; align-items: center;
-            display: none; /* Скрыто по умолчанию, пока скрипт не проверит localStorage */
+            display: none; justify-content: center; align-items: center;
         }
-        #auth-form {
-            border: 3px double #33ff33; padding: 30px;
-            background: #000; text-align: center; width: 320px;
-        }
-        .auth-input {
-            background: #113311; color: #33ff33; border: 1px solid #33ff33;
-            font-family: inherit; font-weight: bold; font-size: 0.8em;
-            padding: 10px; margin: 8px 0; width: 90%; text-align: center;
-        }
-        #auth-error { color: #ff3333; font-size: 0.6em; margin: 10px 0; min-height: 1.2em; }
+        #auth-form { border: 3px double #33ff33; padding: 30px; background: #000; text-align: center; width: 320px; }
+        .auth-input { background: #113311; color: #33ff33; border: 1px solid #33ff33; font-family: inherit; font-weight: bold; font-size: 0.8em; padding: 10px; margin: 8px 0; width: 90%; text-align: center; }
 
         .scanline {
             width: 100%; height: 100%; z-index: 10;
@@ -98,11 +79,11 @@
         @media (max-aspect-ratio: 1/1) {
             #game-grid {
                 grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto auto 1fr;
-                grid-template-areas: "header header" "stats next" "vol vol" "btns btns" "center center";
+                grid-template-areas: "header header" "stats next" "btns btns" "btns btns" "center center";
                 gap: 5px; width: 98vw;
             }
             #controls-area { display: none; }
-            .mobile-vol, .mobile-btns { display: flex; width: 90%; margin: 0 auto; justify-content: center; }
+            .mobile-btns { display: flex; width: 90%; margin: 0 auto; justify-content: center; grid-area: btns; }
             #center-area { font-size: 2.2vh; }
             #name-container { min-width: 80%; font-size: 1.8vh; }
         }
@@ -117,7 +98,7 @@
         <h2 style="margin-bottom: 20px;">ВХОД / РЕГИСТРАЦИЯ</h2>
         <input type="text" id="username" class="auth-input" placeholder="ЛОГИН" maxlength="30" autocomplete="username" required>
         <input type="password" id="password" class="auth-input" placeholder="ПАРОЛЬ" autocomplete="current-password" required>
-        <div id="auth-error"></div>
+        <div id="auth-error" style="color:#ff3333; font-size:0.6em; margin:10px 0;"></div>
         <button type="submit" class="btn" style="width: 100%;">ПОДКЛЮЧИТЬСЯ</button>
     </form>
 </div>
@@ -128,15 +109,10 @@
     </div>
     <div id="stats-area" class="panel"></div>
     <div id="controls-area" class="panel">
-        <div>УПРАВЛЕНИЕ:<br>← →  - ДВИЖЕНИЕ<br>↑    - ПОВОРОТ<br>↓    - УСКОРИТЬ<br>SPACE- БРОСИТЬ</div>
-        <div class="volume-box" style="margin: 15px 0;">
-            <label>ЗВУК</label>
-            <input type="range" class="sfxSlider" min="0" max="1" step="0.05" value="0.5">
-        </div>
         <button class="btn" onclick="togglePause()">⏸ ПАУЗА</button>
         <button class="btn" style="margin-top: 5px;" onclick="logout()">🚪 ВЫЙТИ</button>
     </div>
-    <div class="mobile-btns" style="display:none; grid-area: btns; gap: 10px; margin-bottom: 5px;">
+    <div class="mobile-btns" style="display:none; gap: 10px; margin-bottom: 5px;">
         <button class="btn" style="flex:1" onclick="togglePause()">⏸ ПАУЗА</button>
         <button class="btn" style="flex:1" onclick="logout()">🚪 ВЫЙТИ</button>
     </div>
@@ -165,38 +141,25 @@
     let playerPass = localStorage.getItem('tetrisPlayerPass');
     let isAuthenticating = true;
 
-    const authOverlay = document.getElementById('auth-overlay');
-
-    // Проверка сохраненного входа
     if (playerName && playerPass) {
         database.ref('leaderboard/' + playerName).once('value').then(snap => {
-            if (snap.exists() && snap.val().password === playerPass) {
-                loginSuccess(playerName, playerPass, snap.val().score || 0);
-            } else {
-                showAuth();
-            }
-        }).catch(() => showAuth());
-    } else {
-        showAuth();
-    }
+            if (snap.exists() && snap.val().password === playerPass) loginSuccess(playerName, playerPass, snap.val().score || 0);
+            else showAuth();
+        }).catch(showAuth);
+    } else { showAuth(); }
 
-    function showAuth() {
-        authOverlay.style.display = 'flex';
-        isAuthenticating = true;
-    }
+    function showAuth() { document.getElementById('auth-overlay').style.display = 'flex'; isAuthenticating = true; }
 
     document.getElementById('auth-form').onsubmit = (e) => {
         e.preventDefault();
         let n = document.getElementById('username').value.trim().substring(0, 30).replace(/[.#$\[\]]/g, '');
         const p = document.getElementById('password').value;
-        
         database.ref('leaderboard/' + n).once('value').then(snap => {
             if (snap.exists()) {
                 if (snap.val().password === p) loginSuccess(n, p, snap.val().score || 0);
                 else document.getElementById('auth-error').textContent = "НЕВЕРНЫЙ ПАРОЛЬ";
             } else {
-                database.ref('leaderboard/' + n).set({name:n, password:p, score:0, timestamp:Date.now()})
-                .then(() => loginSuccess(n, p, 0));
+                database.ref('leaderboard/' + n).set({name:n, password:p, score:0, timestamp:Date.now()}).then(() => loginSuccess(n, p, 0));
             }
         });
     };
@@ -206,16 +169,11 @@
         localStorage.setItem('tetrisPlayerName', n);
         localStorage.setItem('tetrisPlayerPass', p);
         document.getElementById('display-name').textContent = n;
-        authOverlay.style.display = 'none';
-        isAuthenticating = false;
-        resetGame();
-        render();
+        document.getElementById('auth-overlay').style.display = 'none';
+        isAuthenticating = false; resetGame(); render();
     }
 
-    function logout() {
-        localStorage.clear();
-        location.reload();
-    }
+    function logout() { localStorage.clear(); location.reload(); }
 
     // --- ТЕТРИС ---
     const COLS = 10, ROWS = 20;
@@ -224,10 +182,7 @@
 
     const SHAPES = [[], [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], [[2,2],[2,2]], [[0,3,0],[3,3,3],[0,0,0]], [[0,0,4],[4,4,4],[0,0,0]], [[5,0,0],[5,5,5],[0,0,0]], [[0,6,6],[6,6,0],[0,0,0]], [[7,7,0],[0,7,7],[0,0,0]]];
 
-    function createPiece() {
-        const id = Math.floor(Math.random() * 7) + 1;
-        return { matrix: SHAPES[id], x: 3, y: 0 };
-    }
+    function createPiece() { const id = Math.floor(Math.random() * 7) + 1; return { matrix: SHAPES[id], x: 3, y: 0 }; }
 
     function collide(b, p) {
         for (let y = 0; y < p.matrix.length; ++y) {
@@ -267,10 +222,7 @@
         }
     }
 
-    function saveScore() {
-        if (!playerName) return;
-        database.ref('leaderboard/' + playerName).update({score: highScore, timestamp: Date.now()});
-    }
+    function saveScore() { if (playerName) database.ref('leaderboard/' + playerName).update({score: highScore, timestamp: Date.now()}); }
 
     function resetGame() {
         board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
@@ -308,34 +260,40 @@
         if (gameOver) { if (e.code === 'Space' && !e.repeat) resetGame(); return; }
         if (e.code === 'ArrowDown') isHoldingDown = true;
         if (e.code === 'ArrowLeft') { piece.x--; if (collide(board, piece)) piece.x++; }
-        if (e.code['ArrowRight']) { piece.x++; if (collide(board, piece)) piece.x--; }
+        if (e.code === 'ArrowRight') { piece.x++; if (collide(board, piece)) piece.x--; }
         if (e.code === 'ArrowUp') { let m = rotate(piece.matrix); if (!collide(board, {...piece, matrix: m})) piece.matrix = m; }
         if (e.code === 'Space' && !e.repeat) { while(!collide(board, piece)) piece.y++; piece.y--; drop(); }
         render();
     });
     document.addEventListener('keyup', e => { if (e.code === 'ArrowDown') isHoldingDown = false; });
 
-    // СЕНСОР (ИСПРАВЛЕННЫЙ)
+    // ИСПРАВЛЕННЫЙ СЕНСОР
     let tX = 0, tY = 0, tMoved = false;
     document.addEventListener('touchstart', e => {
         if (isAuthenticating || e.target.tagName === 'BUTTON') return;
         if (gameOver) { resetGame(); return; }
         tX = e.touches[0].clientX; tY = e.touches[0].clientY; tMoved = false;
-    });
+    }, { passive: false });
+
     document.addEventListener('touchmove', e => {
         if (isAuthenticating || gameOver || isPaused) return;
+        e.preventDefault(); // Теперь работает!
         let dx = e.touches[0].clientX - tX, dy = e.touches[0].clientY - tY;
-        if (Math.abs(dx) > 30 || Math.abs(dy) > 30) tMoved = true;
-        if (dy > 50) { isHoldingDown = true; } 
-        else if (dx > 40) { piece.x++; if (collide(board, piece)) piece.x--; tX = e.touches[0].clientX; render(); }
-        else if (dx < -40) { piece.x--; if (collide(board, piece)) piece.x++; tX = e.touches[0].clientX; render(); }
-    });
+        
+        if (Math.abs(dx) > 35) { // Движение влево/вправо
+            if (dx > 0) { piece.x++; if (collide(board, piece)) piece.x--; }
+            else { piece.x--; if (collide(board, piece)) piece.x++; }
+            tX = e.touches[0].clientX; tMoved = true; render();
+        }
+        if (dy > 40) { isHoldingDown = true; tMoved = true; } // Свайп вниз - ускорение
+    }, { passive: false });
+
     document.addEventListener('touchend', e => {
         isHoldingDown = false;
         if (!tMoved && !isAuthenticating && !gameOver && !isPaused && e.target.tagName !== 'BUTTON') {
             let m = rotate(piece.matrix); if (!collide(board, {...piece, matrix: m})) piece.matrix = m; render();
         }
-    });
+    }, { passive: false });
 
     function togglePause() { isPaused = !isPaused; render(); }
     update();
