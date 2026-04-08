@@ -22,10 +22,7 @@
             touch-action: none; 
         }
 
-        .panel {
-            white-space: pre;
-            line-height: 1.1; 
-        }
+        .panel { white-space: pre; line-height: 1.1; }
 
         #game-grid {
             display: grid;
@@ -42,11 +39,8 @@
         #controls-area { grid-area: controls; display: flex; flex-direction: column; gap: 15px; }
         
         #center-area { 
-            grid-area: center; 
-            text-align: center; 
-            border: 3px double #33ff33; 
-            padding: 10px 15px; 
-            background: rgba(0, 20, 0, 0.15); 
+            grid-area: center; text-align: center; border: 3px double #33ff33; 
+            padding: 10px 15px; background: rgba(0, 20, 0, 0.15); 
         }
 
         .volume-box { display: flex; flex-direction: column; gap: 8px; font-size: 0.8em; }
@@ -73,42 +67,64 @@
             pointer-events: none; position: fixed; top: 0; left: 0;
         }
 
+        /* ОКНО АВТОРИЗАЦИИ */
+        #auth-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(5, 5, 5, 0.95); z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+        }
+        #auth-form {
+            border: 3px double #33ff33; padding: 30px;
+            background: #000; text-align: center;
+            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
+        }
+        .auth-input {
+            background: #113311; color: #33ff33; border: 1px solid #33ff33;
+            font-family: inherit; font-weight: bold; font-size: 0.8em;
+            padding: 10px; margin: 10px 0; width: 80%; text-align: center;
+            text-transform: uppercase;
+        }
+        .auth-input::placeholder { color: rgba(51, 255, 51, 0.5); }
+        .auth-input:focus { outline: none; box-shadow: 0 0 10px #33ff33; }
+        #auth-error { color: #ff3333; font-size: 0.7em; margin-top: 10px; min-height: 1.2em; text-shadow: none; }
+
         /* МОБИЛЬНАЯ ВЕРСТКА */
         @media (max-aspect-ratio: 1/1) {
             body { align-items: flex-start; padding-top: 5px; }
             #game-grid {
-                grid-template-columns: 1fr 1fr;
-                grid-template-rows: auto auto auto 1fr;
-                grid-template-areas: 
-                    "stats next"
-                    "vol vol"
-                    "btns btns"
-                    "center center";
+                grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto 1fr;
+                grid-template-areas: "stats next" "vol vol" "btns btns" "center center";
                 gap: 8px; width: 98vw;
             }
             #stats-area { grid-area: stats; font-size: 2.2vh; text-align: left; padding-left: 10px; }
             #next-area { grid-area: next; font-size: 2.2vh; text-align: right; padding-right: 10px; }
-            
             #controls-area { grid-area: none; display: none; } 
-            
             .mobile-vol { grid-area: vol; display: flex; justify-content: center; align-items: center; gap: 15px; width: 90%; margin: 0 auto; }
             .mobile-btns { grid-area: btns; display: flex; justify-content: center; gap: 10px; width: 100%; }
-            
             .btn-mob { padding: 6px 12px; font-size: 1.8vh; flex: 1; max-width: 160px; }
             .vol-mob { width: 120px !important; }
-
             #center-area { font-size: 2.5vh; padding: 5px; margin-top: 2px; }
             #controls-text { display: none; }
+            #auth-form { width: 85%; padding: 20px 10px; }
+            .auth-input { width: 90%; }
         }
-
-        @media (min-aspect-ratio: 1/1) {
-            .mobile-vol, .mobile-btns { display: none; }
-        }
+        @media (min-aspect-ratio: 1/1) { .mobile-vol, .mobile-btns { display: none; } }
     </style>
 </head>
 <body>
 
 <div class="scanline"></div>
+
+<div id="auth-overlay">
+    <form id="auth-form">
+        <h2 style="margin-top: 0;">ТЕРМИНАЛ ДОСТУПА</h2>
+        <input type="text" id="username" class="auth-input" placeholder="НИКНЕЙМ" autocomplete="username" required>
+        <input type="password" id="password" class="auth-input" placeholder="ПАРОЛЬ" autocomplete="current-password" required>
+        <br>
+        <button type="submit" class="btn" style="margin-top: 15px; width: 80%;">ВОЙТИ / СОЗДАТЬ</button>
+        <div id="auth-error"></div>
+    </form>
+</div>
 
 <div id="game-grid">
     <div id="stats-area" class="panel"></div>
@@ -120,7 +136,6 @@
             <input type="range" class="sfxSlider" min="0" max="1" step="0.05" value="0.5">
         </div>
         <button class="btn" id="pcPauseBtn">⏸ ПАУЗА</button>
-        <button class="btn" onclick="resetRecord()">СБРОС РЕКОРДА</button>
     </div>
 
     <div class="mobile-vol">
@@ -129,7 +144,6 @@
     </div>
     <div class="mobile-btns">
         <button class="btn btn-mob" id="mobPauseBtn">⏸ ПАУЗА</button>
-        <button class="btn btn-mob" onclick="resetRecord()">СБРОС</button>
     </div>
 
     <div id="next-area" class="panel"></div>
@@ -151,33 +165,107 @@
         appId: "1:450736476383:web:e208431851c8072d32d96a"
     };
 
-    // Инициализация
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
 
-    // Функция отправки рекорда в базу
+    // --- ЛОГИКА АВТОРИЗАЦИИ И ПРОФИЛЯ ---
+    let playerName = localStorage.getItem('tetrisPlayerName');
+    let playerPass = localStorage.getItem('tetrisPlayerPass');
+    let isAuthenticating = true; // Блокируем игру до входа
+
+    const authOverlay = document.getElementById('auth-overlay');
+    const authForm = document.getElementById('auth-form');
+    const authError = document.getElementById('auth-error');
+
+    // Если данные уже есть в памяти, скрываем окно
+    if (playerName && playerPass) {
+        authOverlay.style.display = 'none';
+        isAuthenticating = false;
+        fetchHighScore();
+    }
+
+    // Обработка отправки формы
+    authForm.addEventListener('submit', (e) => {
+        e.preventDefault(); // Это позволяет сработать менеджеру паролей, но мы сами управляем данными
+        
+        const rawName = document.getElementById('username').value.trim();
+        const rawPass = document.getElementById('password').value;
+        const safeKey = rawName.replace(/[.#$\[\]]/g, ''); // Защита от спецсимволов для базы
+        
+        if (safeKey === "") {
+            authError.textContent = "НЕДОПУСТИМЫЙ НИК!";
+            return;
+        }
+
+        authError.textContent = "СВЯЗЬ С СЕРВЕРОМ...";
+        const playerRef = database.ref('leaderboard/' + safeKey);
+
+        playerRef.once('value').then((snapshot) => {
+            if (snapshot.exists()) {
+                // Аккаунт существует -> проверяем пароль
+                const data = snapshot.val();
+                if (data.password === rawPass) {
+                    loginSuccess(safeKey, rawPass, data.score || 0);
+                } else {
+                    authError.textContent = "НИК ЗАНЯТ ИЛИ НЕВЕРНЫЙ ПАРОЛЬ!";
+                }
+            } else {
+                // Аккаунта нет -> регистрируем новый
+                playerRef.set({
+                    name: safeKey,
+                    password: rawPass,
+                    score: 0,
+                    timestamp: Date.now()
+                }).then(() => {
+                    loginSuccess(safeKey, rawPass, 0);
+                });
+            }
+        }).catch((err) => {
+            authError.textContent = "ОШИБКА СЕРВЕРА!";
+            console.error(err);
+        });
+    });
+
+    function loginSuccess(name, pass, savedScore) {
+        localStorage.setItem('tetrisPlayerName', name);
+        localStorage.setItem('tetrisPlayerPass', pass);
+        localStorage.setItem('tetrisHighScore', savedScore); // Подтягиваем рекорд из базы
+        playerName = name;
+        highScore = savedScore;
+        
+        authOverlay.style.display = 'none';
+        isAuthenticating = false;
+        render(); // Обновляем экран с правильным именем
+    }
+
+    function fetchHighScore() {
+        if (!playerName) return;
+        database.ref('leaderboard/' + playerName).once('value').then((snap) => {
+            if (snap.exists()) {
+                highScore = snap.val().score || 0;
+                localStorage.setItem('tetrisHighScore', highScore);
+                render();
+            }
+        });
+    }
+
+    // Функция обновления рекорда в базе (теперь используем .update чтобы не стереть пароль)
     function saveOnlineScore(finalScore) {
-        if (finalScore <= 0) return; // Не отправляем нулевые результаты
-        const playerName = "MamontXXXL"; 
-        const newScoreRef = database.ref('leaderboard').push();
-        newScoreRef.set({
-            name: playerName,
-            score: finalScore,
-            timestamp: Date.now()
-        });
-        console.log("Результат отправлен в облако:", finalScore);
-    }
-
-    // Функция загрузки топа для консоли (временно)
-    function loadLeaderboard() {
-        const scoresRef = database.ref('leaderboard').orderByChild('score').limitToLast(10);
-        scoresRef.on('value', (snapshot) => {
+        if (finalScore <= 0 || !playerName) return; 
+        
+        const playerRef = database.ref('leaderboard/' + playerName);
+        playerRef.once('value').then((snapshot) => {
             const data = snapshot.val();
-            console.log("Данные из облака (Топ рекордов):", data);
+            if (!data || finalScore > data.score) {
+                // Используем update, а не set!
+                playerRef.update({
+                    score: finalScore,
+                    timestamp: Date.now()
+                });
+                console.log(`Новый рекорд в облаке для ${playerName}:`, finalScore);
+            }
         });
     }
-
-    loadLeaderboard();
 
     // --- ЗВУКОВЫЕ ЭФФЕКТЫ ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -262,15 +350,17 @@
             sweep(); 
             if (collide(board, piece)) {
                 gameOver = true;
-                saveOnlineScore(score); // ВЫЗОВ ОТПРАВКИ РЕКОРДА В БАЗУ
+                saveOnlineScore(score); 
             }
         }
         dropCounter = 0;
     }
 
     function render() {
+        if (isAuthenticating) return; // Не рендерим пока не войдет
+        
         const isMobile = window.innerWidth < 700;
-        document.getElementById('stats-area').textContent = `РЕКОРД: ${highScore}\nЛИНИИ:  ${lines}\nУРОВЕНЬ: ${level}\nСЧЕТ:   ${score}`;
+        document.getElementById('stats-area').textContent = `ИГРОК:  ${playerName || "???"}\nРЕКОРД: ${highScore}\nЛИНИИ:  ${lines}\nУРОВЕНЬ: ${level}\nСЧЕТ:   ${score}`;
         document.getElementById('next-area').textContent = `СЛЕДУЮЩАЯ:\n` + nextPiece.matrix.map(r => r.map(v => v ? "[]" : "\u00A0\u00A0").join("")).join("\n");
         
         let view = board.map(r => [...r]);
@@ -291,14 +381,10 @@
     }
 
     function togglePause() {
-        if (gameOver) return;
+        if (gameOver || isAuthenticating) return;
         isPaused = !isPaused;
         if (!isPaused) lastTime = performance.now();
         render();
-    }
-
-    function resetRecord() {
-        if(confirm("СБРОСИТЬ РЕКОРД?")) { highScore = 0; localStorage.removeItem('tetrisHighScore'); render(); }
     }
 
     function resetGame() {
@@ -309,7 +395,7 @@
     }
 
     function update(t = 0) {
-        if (!gameOver && !isPaused) {
+        if (!isAuthenticating && !gameOver && !isPaused) {
             const dt = t - lastTime; lastTime = t;
             dropCounter += dt;
             if (dropCounter > dropInterval) drop();
@@ -322,6 +408,7 @@
     document.getElementById('mobPauseBtn').onclick = (e) => { e.stopPropagation(); togglePause(); };
 
     document.addEventListener('keydown', e => {
+        if (isAuthenticating) return; // Блокируем клавиши во время входа
         if (e.key === 'Escape') togglePause();
         if (isPaused) return;
         if (gameOver && e.code === 'Space') { resetGame(); return; }
@@ -338,7 +425,7 @@
     let touchStartX = 0, touchStartY = 0, touchMoved = false, holdTimer = null, isHolding = false;
 
     document.addEventListener('touchstart', e => {
-        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        if (isAuthenticating || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
         if (gameOver) { resetGame(); return; }
         if (isPaused) return;
         touchStartX = e.touches[0].clientX;
@@ -348,7 +435,7 @@
     }, {passive: false});
 
     document.addEventListener('touchmove', e => {
-        if (gameOver || isPaused || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        if (isAuthenticating || gameOver || isPaused || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
         e.preventDefault();
         let touchX = e.touches[0].clientX;
         let touchY = e.touches[0].clientY;
@@ -368,6 +455,7 @@
     }, {passive: false});
 
     document.addEventListener('touchend', e => {
+        if (isAuthenticating) return;
         clearTimeout(holdTimer); dropInterval = baseDropInterval;
         if (!touchMoved && !isHolding && !isPaused && !gameOver && e.target.tagName !== 'BUTTON') {
             const old = piece.matrix; piece.matrix = rotate(piece.matrix);
@@ -383,3 +471,4 @@
 </script>
 </body>
 </html>
+
