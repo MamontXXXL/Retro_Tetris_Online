@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Retro Tetris</title>
+    <title>Retro Tetris Online</title>
     <style>
         body {
             background-color: #050505;
@@ -73,7 +73,7 @@
             pointer-events: none; position: fixed; top: 0; left: 0;
         }
 
-        /* МОБИЛЬНАЯ ВЕРСТКА - ФИКС "УЕХАВШЕГО" ДИЗАЙНА */
+        /* МОБИЛЬНАЯ ВЕРСТКА */
         @media (max-aspect-ratio: 1/1) {
             body { align-items: flex-start; padding-top: 5px; }
             #game-grid {
@@ -89,9 +89,8 @@
             #stats-area { grid-area: stats; font-size: 2.2vh; text-align: left; padding-left: 10px; }
             #next-area { grid-area: next; font-size: 2.2vh; text-align: right; padding-right: 10px; }
             
-            #controls-area { grid-area: none; display: none; } /* Скрываем десктопную панель */
+            #controls-area { grid-area: none; display: none; } 
             
-            /* Новые зоны для мобильного управления */
             .mobile-vol { grid-area: vol; display: flex; justify-content: center; align-items: center; gap: 15px; width: 90%; margin: 0 auto; }
             .mobile-btns { grid-area: btns; display: flex; justify-content: center; gap: 10px; width: 100%; }
             
@@ -102,7 +101,6 @@
             #controls-text { display: none; }
         }
 
-        /* Скрываем мобильные элементы на десктопе */
         @media (min-aspect-ratio: 1/1) {
             .mobile-vol, .mobile-btns { display: none; }
         }
@@ -138,7 +136,50 @@
     <div id="center-area" class="panel"></div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-database-compat.js"></script>
+
 <script>
+    // --- НАСТРОЙКИ FIREBASE ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyCbpS08yErDVYxlIN7fsVh7hO4xusThmLc",
+        authDomain: "tetris-online-865ba.firebaseapp.com",
+        databaseURL: "https://tetris-online-865ba-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "tetris-online-865ba",
+        storageBucket: "tetris-online-865ba.firebasestorage.app",
+        messagingSenderId: "450736476383",
+        appId: "1:450736476383:web:e208431851c8072d32d96a"
+    };
+
+    // Инициализация
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // Функция отправки рекорда в базу
+    function saveOnlineScore(finalScore) {
+        if (finalScore <= 0) return; // Не отправляем нулевые результаты
+        const playerName = "MamontXXXL"; 
+        const newScoreRef = database.ref('leaderboard').push();
+        newScoreRef.set({
+            name: playerName,
+            score: finalScore,
+            timestamp: Date.now()
+        });
+        console.log("Результат отправлен в облако:", finalScore);
+    }
+
+    // Функция загрузки топа для консоли (временно)
+    function loadLeaderboard() {
+        const scoresRef = database.ref('leaderboard').orderByChild('score').limitToLast(10);
+        scoresRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            console.log("Данные из облака (Топ рекордов):", data);
+        });
+    }
+
+    loadLeaderboard();
+
+    // --- ЗВУКОВЫЕ ЭФФЕКТЫ ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const sfxGain = audioCtx.createGain();
     sfxGain.connect(audioCtx.destination);
@@ -169,6 +210,7 @@
         clear: () => { [523, 659, 783, 1046].forEach((f, i) => setTimeout(() => playSFX(f, 0.4, 'square', 0.1), i * 60)); }
     };
 
+    // --- ЛОГИКА ТЕТРИСА ---
     const COLS = 10, ROWS = 20;
     let board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
     let score = 0, lines = 0, level = 1, gameOver = false, isPaused = false;
@@ -217,7 +259,11 @@
             piece.y--;
             piece.matrix.forEach((row, y) => row.forEach((v, x) => { if (v) board[y + piece.y][x + piece.x] = v; }));
             sounds.drop(); piece = nextPiece; nextPiece = createPiece();
-            sweep(); if (collide(board, piece)) gameOver = true;
+            sweep(); 
+            if (collide(board, piece)) {
+                gameOver = true;
+                saveOnlineScore(score); // ВЫЗОВ ОТПРАВКИ РЕКОРДА В БАЗУ
+            }
         }
         dropCounter = 0;
     }
