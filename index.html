@@ -12,31 +12,30 @@
             --dark: #050505;
         }
 
+        /* Safe default, removed overflow: hidden to allow mobile scrolling */
         body, html {
             margin: 0;
             padding: 0;
             background-color: var(--dark);
             color: var(--green);
             font-family: 'Courier New', Courier, monospace;
+            width: 100%;
             height: 100%;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto; 
             text-shadow: 0 0 5px var(--green);
             user-select: none;
+            -webkit-user-select: none;
         }
 
-        /* CRT Scanlines effect */
-        body::after {
-            content: " ";
-            display: block;
-            position: absolute;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            right: 0;
+        /* Moved CRT effect to a fixed overlay to prevent layout breaking */
+        .crt-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            z-index: 2;
             background-size: 100% 4px, 3px 100%;
             pointer-events: none;
+            z-index: 9999;
         }
 
         pre {
@@ -117,14 +116,16 @@
             width: 80%;
         }
 
-        /* Game Layout */
+        /* Game Layout (Switched to Flexbox for stability) */
         #game-screen {
             display: none;
-            height: 100%;
+            min-height: 100%;
             flex-direction: column;
             align-items: center;
-            padding-top: 20px;
+            padding: 20px 10px;
             box-sizing: border-box;
+            position: relative;
+            z-index: 5;
         }
 
         #header {
@@ -137,37 +138,24 @@
         }
 
         #layout {
-            display: grid;
-            grid-template-columns: 200px auto 250px;
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: flex-start;
             gap: 40px;
-            align-items: start;
-            max-width: 900px;
+            max-width: 1000px;
+            width: 100%;
         }
 
-        .panel { padding: 10px; }
-
-        /* Mobile adaptation */
-        @media (max-aspect-ratio: 1/1), (max-width: 768px) {
-            pre { font-size: 14px; line-height: 1.05; }
-            #layout {
-                grid-template-columns: 1fr;
-                gap: 15px;
-                width: 100%;
-                padding: 0 10px;
-            }
-            #header { margin-bottom: 5px; font-size: 16px; }
-            /* Stack order: Stats (top), Controls (mid), Board (bottom) */
-            .panel-stats { order: 1; display: flex; justify-content: space-between; flex-wrap: wrap; }
-            .panel-controls { order: 2; text-align: center; }
-            .panel-board { order: 3; display: flex; justify-content: center; touch-action: none; }
-            
-            .controls-text { display: none; } /* Hide PC controls on mobile */
-            .mobile-controls-text { display: block !important; }
+        .panel-stats, .panel-controls {
+            flex: 1;
+            max-width: 250px;
         }
 
-        .mobile-controls-text { display: none; margin-bottom: 15px;}
-        .hidden { display: none !important; }
-        
+        .panel-board {
+            flex: 0 0 auto; /* Prevent board from stretching */
+        }
+
         #game-board {
             border: 3px double var(--green);
             padding: 5px 10px;
@@ -175,9 +163,50 @@
             text-align: center;
         }
 
+        .mobile-controls-text { display: none; margin-bottom: 15px;}
+        
+        /* Mobile adaptation */
+        @media (max-width: 768px) {
+            pre { font-size: 15px; }
+            #header { margin-bottom: 10px; font-size: 16px; }
+            
+            #layout {
+                flex-direction: column;
+                align-items: center;
+                gap: 15px;
+            }
+
+            .panel-stats { 
+                order: 1; /* Force top */
+                display: flex; 
+                flex-direction: row;
+                justify-content: space-between; 
+                max-width: 100%;
+                width: 100%;
+                font-size: 14px;
+            }
+
+            .panel-board { 
+                order: 2; /* Force middle */
+                transform: scale(0.95); /* Slight shrink to ensure fit */
+                touch-action: none; 
+            }
+
+            .panel-controls { 
+                order: 3; /* Force bottom */
+                max-width: 100%;
+                width: 100%;
+                text-align: center; 
+            }
+            
+            .controls-text { display: none; }
+            .mobile-controls-text { display: block; }
+        }
     </style>
 </head>
 <body>
+
+    <div class="crt-overlay"></div>
 
     <div id="auth-screen">
         <div class="modal-box">
@@ -194,24 +223,24 @@
         <div id="header">ИГРОК: <span id="ui-player-name">...</span></div>
         
         <div id="layout">
-            <div class="panel panel-stats">
+            <div class="panel-stats">
                 <div>
                     <p>РЕКОРД: <span id="ui-highscore">0</span></p>
                     <p>ЛИНИИ:  <span id="ui-lines">0</span></p>
                     <p>УРОВЕНЬ: <span id="ui-level">1</span></p>
                     <p>СЧЕТ:   <span id="ui-score">0</span></p>
                 </div>
-                <div style="margin-top: 20px;">
+                <div class="stats-right" style="text-align: right;">
                     <p>СЛЕДУЮЩАЯ:</p>
                     <pre id="ui-next-piece"></pre>
                 </div>
             </div>
 
-            <div class="panel panel-board">
+            <div class="panel-board">
                 <pre id="game-board"></pre>
             </div>
 
-            <div class="panel panel-controls">
+            <div class="panel-controls">
                 <div class="controls-text">
                     <p>УПРАВЛЕНИЕ:</p>
                     <p>← →   - ДВИЖЕНИЕ</p>
@@ -228,7 +257,7 @@
                 <br>
                 <p>ЗВУК</p>
                 <input type="range" id="ui-volume" min="0" max="1" step="0.1" value="0.5">
-                <br><br><br>
+                <br><br>
                 <button id="btn-pause" style="width: 100%; margin-bottom: 15px;">|| ПАУЗА</button>
                 <button id="btn-logout" style="width: 100%;">█ ВЫЙТИ</button>
             </div>
@@ -337,6 +366,7 @@ function resetGame() {
     nextPieceIdx = Math.floor(Math.random() * 7) + 1;
     isGameOver = false;
     isPaused = false;
+    document.getElementById('btn-pause').innerText = "|| ПАУЗА";
     spawnPiece();
     updateScoreUI();
     updateNextPieceUI();
@@ -476,15 +506,13 @@ function sweep() {
 }
 
 /**
- * RENDERING (ASCII Style)
+ * RENDERING
  */
 function draw() {
     if(!piece) return;
     
-    // Create copy of board for rendering
     let renderBoard = board.map(row => [...row]);
     
-    // Draw current piece
     piece.matrix.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value !== 0) {
@@ -504,7 +532,13 @@ function draw() {
         out += ' !>\n';
     }
     out += '<!====================!>\n';
-    out += '  \\/\\/\\/\\/\\/\\/\\/\\/\\/\\/  \n';
+    
+    // Добавлен визуальный индикатор паузы под полем
+    if (isPaused) {
+        out += '     [ ПАУЗА ]        \n';
+    } else {
+        out += '  \\/\\/\\/\\/\\/\\/\\/\\/\\/\\/  \n';
+    }
 
     document.getElementById('game-board').innerHTML = out;
 }
@@ -595,10 +629,9 @@ document.getElementById('game-board').addEventListener('touchstart', e => {
 
 document.getElementById('game-board').addEventListener('touchmove', e => {
     if(isPaused || isGameOver) return;
-    e.preventDefault(); // Prevent scrolling
+    e.preventDefault(); 
     let touchX = e.touches[0].clientX;
     
-    // Smooth horizontal moving
     if (touchX - lastMoveX > SWIPE_THRESHOLD) {
         playerMove(1);
         lastMoveX = touchX;
@@ -616,11 +649,9 @@ document.getElementById('game-board').addEventListener('touchend', e => {
     let deltaX = touchEndX - touchStartX;
     let deltaY = touchEndY - touchStartY;
     
-    // Tap (rotate)
     if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
         playerRotate(1);
     } 
-    // Swipe down (Hard Drop)
     else if (deltaY > 50 && Math.abs(deltaY) > Math.abs(deltaX)) {
         playerHardDrop();
     }
@@ -630,6 +661,7 @@ function togglePause() {
     if (isGameOver) return;
     isPaused = !isPaused;
     document.getElementById('btn-pause').innerText = isPaused ? "► ИГРАТЬ" : "|| ПАУЗА";
+    draw(); // Force redraw to show/hide pause text
 }
 document.getElementById('btn-pause').addEventListener('click', togglePause);
 
@@ -663,7 +695,6 @@ btnLogin.addEventListener('click', async () => {
         return;
     }
     
-    // Init Audio Context on first user interaction
     if(audioCtx.state === 'suspended') audioCtx.resume();
 
     btnLogin.innerText = "ЗАГРУЗКА...";
@@ -674,7 +705,6 @@ btnLogin.addEventListener('click', async () => {
         const data = snapshot.val();
 
         if (data) {
-            // User exists, check password
             if (data.password === pass) {
                 loginSuccess(user, data.maxScore || 0);
             } else {
@@ -682,7 +712,6 @@ btnLogin.addEventListener('click', async () => {
                 btnLogin.innerText = "ПОДКЛЮЧИТЬСЯ";
             }
         } else {
-            // New user, register
             await db.ref('leaderboard/' + user).set({
                 password: pass,
                 maxScore: 0
@@ -724,7 +753,6 @@ document.getElementById('btn-logout').addEventListener('click', () => {
     setAuthScreen(true);
 });
 
-// Auto-login check
 window.onload = () => {
     const savedUser = localStorage.getItem('tetris_retro_user');
     const savedPass = localStorage.getItem('tetris_retro_pass');
